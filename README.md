@@ -1,5 +1,7 @@
 # EAGLE Schematic Search ULP (v1.0.0)
 
+![Couverture all-search-ulp](all_search_cover.png)
+
 Un script ULP (User Language Program) performant pour Autodesk EAGLE, conçu pour rechercher des composants, des équipotentielles (nets), des broches (pins) et des étiquettes de texte manuel à travers toutes les pages d'un schéma.
 
 ***Pour un guide d'utilisation plus détaillé et une foire aux questions (FAQ), consultez le [GUIDE_UTILISATION.md](GUIDE_UTILISATION.md).***

@@ -1,5 +1,7 @@
 # Guide d'Utilisation — all-search.ulp (Recherche Globale de Schématique EAGLE)
 
+![Couverture all-search-ulp](all_search_cover.png)
+
 Ce script ULP (User Language Program) permet d'effectuer une recherche textuelle multicritère sur l'ensemble des feuilles d'un schéma Autodesk EAGLE (compatible avec la version 8.0.1 et supérieures).
 
 ---
