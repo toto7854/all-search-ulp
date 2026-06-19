@@ -1,0 +1,17 @@
+# EAGLE temporary/backup files
+*.s#?
+*.b#?
+*.l#?
+*.scr
+*.stp
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE and Editor configurations
+.vscode/
+.idea/
+*.suo
+*.user

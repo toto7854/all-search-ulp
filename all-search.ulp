@@ -1,0 +1,343 @@
+#usage "en: <b>Schematic Search Across All Sheets</b><br><br>"
+       "This ULP allows you to search for parts (by name, value, device, or attribute), "
+       "nets, pins, and manual texts across all sheets of a schematic. "
+       "Select a result to zoom to its bounding box and highlight it.<br>"
+       "Author: Antigravity AI"
+
+// Global Search Options
+string search_query = "";
+int case_sensitive = 0;
+int match_exact = 0;
+
+int search_parts = 1;
+int search_nets = 1;
+int search_texts = 1;
+int search_pins = 1;
+
+// Parallel arrays for matching results
+int results_count = 0;
+string results_list[];  // Formatted for dlgListView
+
+int match_sheet[];
+string match_type[];
+string match_name[];
+string match_val_text[];
+real match_x1[];
+real match_y1[];
+real match_x2[];
+real match_y2[];
+
+// Helper to determine if a string matches the query
+int match_string(string text, string query) {
+  if (query == "") return 1; // Empty query matches everything
+  
+  string t = text;
+  string q = query;
+  
+  if (!case_sensitive) {
+    t = strlwr(t);
+    q = strlwr(q);
+  }
+  
+  if (match_exact) {
+    return (t == q);
+  } else {
+    return (strstr(t, q) >= 0);
+  }
+}
+
+// Perform search across schematic
+void perform_search() {
+  results_count = 0;
+  
+  // We will build a single string of results separated by newlines
+  // then use strsplit to populate results_list and resize it.
+  string results_str = "";
+  
+  if (!schematic) {
+    dlgMessageBox("Please run this ULP from the Schematic Editor.");
+    return;
+  }
+  
+  schematic(SCH) {
+    SCH.sheets(SH) {
+      int sheet_num = SH.number;
+      
+      // 1. Search Parts (Instances on the sheet)
+      if (search_parts) {
+        SH.instances(I) {
+          int is_match = 0;
+          
+          // Check Instance/Part Name
+          if (match_string(I.name, search_query)) {
+            is_match = 1;
+          }
+          // Check Part Value
+          else if (match_string(I.value, search_query)) {
+            is_match = 1;
+          }
+          // Check Device Name
+          else if (match_string(I.part.device.name, search_query)) {
+            is_match = 1;
+          }
+          // Check Part Attributes
+          else {
+            I.part.attributes(A) {
+              if (match_string(A.name, search_query) || match_string(A.value, search_query)) {
+                is_match = 1;
+                break;
+              }
+            }
+          }
+          
+          if (is_match) {
+            match_sheet[results_count] = sheet_num;
+            match_type[results_count] = "Part";
+            match_name[results_count] = I.name;
+            match_val_text[results_count] = I.value;
+            
+            // Get bounding box in mm
+            match_x1[results_count] = u2mm(I.gate.symbol.area.x1);
+            match_y1[results_count] = u2mm(I.gate.symbol.area.y1);
+            match_x2[results_count] = u2mm(I.gate.symbol.area.x2);
+            match_y2[results_count] = u2mm(I.gate.symbol.area.y2);
+            
+            string line;
+            sprintf(line, "%d\tPart\t%s\t%s\n", sheet_num, I.name, I.value);
+            results_str += line;
+            results_count++;
+          }
+        }
+      }
+      
+      // 2. Search Nets
+      if (search_nets) {
+        SH.nets(N) {
+          if (match_string(N.name, search_query)) {
+            // Find a valid coordinate segment to zoom to
+            int found_coord = 0;
+            real x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+            
+            N.segments(SEG) {
+              // Try junctions first
+              SEG.junctions(J) {
+                x1 = u2mm(J.x) - 10;
+                y1 = u2mm(J.y) - 10;
+                x2 = u2mm(J.x) + 10;
+                y2 = u2mm(J.y) + 10;
+                found_coord = 1;
+                break;
+              }
+              if (found_coord) break;
+              
+              // Try labels
+              SEG.labels(L) {
+                x1 = u2mm(L.x) - 10;
+                y1 = u2mm(L.y) - 10;
+                x2 = u2mm(L.x) + 10;
+                y2 = u2mm(L.y) + 10;
+                found_coord = 1;
+                break;
+              }
+              if (found_coord) break;
+              
+              // Try wires
+              SEG.wires(W) {
+                x1 = u2mm(W.x1);
+                y1 = u2mm(W.y1);
+                x2 = u2mm(W.x2);
+                y2 = u2mm(W.y2);
+                
+                // Add padding if vertical or horizontal
+                if (x1 == x2) { x1 -= 10; x2 += 10; }
+                if (y1 == y2) { y1 -= 10; y2 += 10; }
+                
+                // Enforce minimum zoom window size
+                if (abs(x2 - x1) < 20) {
+                  real cx = (x1 + x2) / 2;
+                  x1 = cx - 10;
+                  x2 = cx + 10;
+                }
+                if (abs(y2 - y1) < 20) {
+                  real cy = (y1 + y2) / 2;
+                  y1 = cy - 10;
+                  y2 = cy + 10;
+                }
+                
+                found_coord = 1;
+                break;
+              }
+              if (found_coord) break;
+            }
+            
+            if (found_coord) {
+              match_sheet[results_count] = sheet_num;
+              match_type[results_count] = "Net";
+              match_name[results_count] = N.name;
+              match_val_text[results_count] = "";
+              
+              match_x1[results_count] = x1;
+              match_y1[results_count] = y1;
+              match_x2[results_count] = x2;
+              match_y2[results_count] = y2;
+              
+              string line;
+              sprintf(line, "%d\tNet\t%s\t\n", sheet_num, N.name);
+              results_str += line;
+              results_count++;
+            }
+          }
+        }
+      }
+      
+      // 3. Search Pins
+      if (search_pins) {
+        SH.instances(I) {
+          I.gate.symbol.pins(P) {
+            if (match_string(P.name, search_query)) {
+              string pin_full_name = I.name + "." + P.name;
+              
+              match_sheet[results_count] = sheet_num;
+              match_type[results_count] = "Pin";
+              match_name[results_count] = pin_full_name;
+              match_val_text[results_count] = P.name;
+              
+              // Zoom box around pin position (P.x, P.y are absolute sheet coords)
+              match_x1[results_count] = u2mm(P.x) - 10;
+              match_y1[results_count] = u2mm(P.y) - 10;
+              match_x2[results_count] = u2mm(P.x) + 10;
+              match_y2[results_count] = u2mm(P.y) + 10;
+              
+              string line;
+              sprintf(line, "%d\tPin\t%s\t%s\n", sheet_num, pin_full_name, P.name);
+              results_str += line;
+              results_count++;
+            }
+          }
+        }
+      }
+      
+      // 4. Search Texts
+      if (search_texts) {
+        SH.texts(T) {
+          if (match_string(T.value, search_query)) {
+            match_sheet[results_count] = sheet_num;
+            match_type[results_count] = "Text";
+            match_name[results_count] = "Text";
+            match_val_text[results_count] = T.value;
+            
+            // Zoom box around text coordinate
+            match_x1[results_count] = u2mm(T.x) - 10;
+            match_y1[results_count] = u2mm(T.y) - 10;
+            match_x2[results_count] = u2mm(T.x) + 10;
+            match_y2[results_count] = u2mm(T.y) + 10;
+            
+            // Limit shown text length in list view to 40 characters
+            string display_text = T.value;
+            if (strlen(display_text) > 40) {
+              display_text = strsub(display_text, 0, 37) + "...";
+            }
+            
+            string line;
+            sprintf(line, "%d\tText\t[Text]\t%s\n", sheet_num, display_text);
+            results_str += line;
+            results_count++;
+          }
+        }
+      }
+    }
+  }
+  
+  // Split the results string to resize and fill results_list array
+  strsplit(results_list, results_str, '\n');
+}
+
+// Execute the navigation command and exit ULP
+void navigate_to_result(int index) {
+  if (index < 0 || index >= results_count) return;
+  
+  string cmd = "";
+  if (match_type[index] == "Text") {
+    // Show command doesn't apply to raw texts, just switch sheet and zoom
+    sprintf(cmd, "EDIT .s%d; WINDOW (%.4fmm %.4fmm) (%.4fmm %.4fmm);", 
+            match_sheet[index], 
+            match_x1[index], match_y1[index], 
+            match_x2[index], match_y2[index]);
+  } else {
+    // For parts, nets, and pins, zoom to bounding box and highlight
+    sprintf(cmd, "EDIT .s%d; WINDOW (%.4fmm %.4fmm) (%.4fmm %.4fmm); SHOW '%s';", 
+            match_sheet[index], 
+            match_x1[index], match_y1[index], 
+            match_x2[index], match_y2[index], 
+            match_name[index]);
+  }
+  exit(cmd);
+}
+
+// Build & Display ULP Dialog
+void show_dialog() {
+  int selected_index = -1;
+  
+  // Initial search on start
+  perform_search();
+  
+  int result = dlgDialog("Search Schematic Sheets v1.0.0") {
+    dlgVBoxLayout {
+      // Top Input Bar
+      dlgHBoxLayout {
+        dlgLabel("Search &Query: ");
+        dlgStringEdit(search_query);
+        dlgPushButton("+&Search") {
+          perform_search();
+          selected_index = -1; // reset selection
+          dlgRedisplay();
+        }
+      }
+      
+      // Filter Options
+      dlgHBoxLayout {
+        dlgGroup("Search Categories") {
+          dlgGridLayout {
+            dlgCell(0, 0) dlgCheckBox("Parts (Name/Value/Device/Attr)", search_parts);
+            dlgCell(0, 1) dlgCheckBox("Nets", search_nets);
+            dlgCell(1, 0) dlgCheckBox("Texts (Manual labels)", search_texts);
+            dlgCell(1, 1) dlgCheckBox("Pins", search_pins);
+          }
+        }
+        dlgGroup("Matching Settings") {
+          dlgCheckBox("Case &Sensitive", case_sensitive);
+          dlgCheckBox("&Exact Match", match_exact);
+        }
+      }
+      
+      dlgSpacing(4);
+      dlgLabel("Search Results (Double-click to view):");
+      
+      // Results Table
+      dlgListView("Sheet\tType\tName\tValue / Text Preview", results_list, selected_index) {
+        if (selected_index >= 0) {
+          navigate_to_result(selected_index);
+        }
+      }
+      
+      // Bottom buttons
+      dlgHBoxLayout {
+        // Show number of found matches
+        dlgLabel(results_count > 0 ? "Matches found" : "No matches");
+        dlgStretch(1);
+        
+        dlgPushButton("Go to / &Show") {
+          if (selected_index >= 0) {
+            navigate_to_result(selected_index);
+          } else {
+            dlgMessageBox("Please select a result from the list first.");
+          }
+        }
+        dlgPushButton("-&Cancel") dlgReject();
+      }
+    }
+  };
+}
+
+// Run ULP
+show_dialog();
